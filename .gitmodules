@@ -1,0 +1,3 @@
+[submodule "src/rserve-client"]
+	path = src/rserve-client
+	url = https://github.com/byrongibby/rserve-client
