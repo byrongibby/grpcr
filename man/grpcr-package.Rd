@@ -1,0 +1,28 @@
+\name{grpcr-package}
+\alias{grpcr-package}
+\docType{package}
+\title{
+  gRPC client and server for R
+}
+\description{
+  gRPC client and server for R.
+}
+\details{
+\tabular{ll}{
+Package: \tab grpcr\cr
+Type: \tab Package\cr
+Version: \tab 1.0.0\cr
+Date: \tab 2025-10-02\cr
+License: \tab MIT\cr
+}
+}
+\author{
+Byron Botha
+
+Maintainer: Byron Botha <byron@gibbybite.com>
+}
+\keyword{ package }
+\examples{
+#NotRun
+grpc_server("~/path/to/service_defs.R", 35000)
+}

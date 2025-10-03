@@ -1,0 +1,2 @@
+useDynLib(grpcr)
+export(grpc_server)

@@ -1,0 +1,321 @@
+#include <condition_variable>
+#include <cstdlib>
+#include <iostream>
+#include <mutex>
+#include <queue>
+#include <string>
+#include <thread>
+
+#include <grpcpp/grpcpp.h>
+#include <grpcpp/health_check_service_interface.h>
+#include <grpcpp/generic/callback_generic_service.h>
+
+#include <R.h>
+#include <Rdefines.h>
+
+#include "absl/flags/flag.h"
+#include "absl/flags/parse.h"
+#include "absl/log/initialize.h"
+#include "absl/strings/str_format.h"
+#include "absl/synchronization/mutex.h"
+
+
+extern "C" {
+
+#include "rserve-client/rexp.h"
+#include "rserve-client/rlist.h"
+#include "rserve-client/rserve.h"
+#include "rserve-client/utilities.h"
+
+}
+
+ABSL_FLAG(uint16_t, port, 50051, "Server port for the service");
+
+using grpc::ByteBuffer;
+using grpc::CallbackGenericService;
+using grpc::CallbackServerContext;
+using grpc::GenericCallbackServerContext;
+using grpc::SerializationTraits;
+using grpc::Server;
+using grpc::ServerBuilder;
+using grpc::ServerGenericBidiReactor;
+using grpc::Status;
+using grpc::StatusCode;
+
+typedef struct RServe {
+    RConnection conn;
+    RList *methods;
+} RServe;
+
+// Thread-safe queue of Rserve connection objects
+// https://www.geeksforgeeks.org/dsa/implement-thread-safe-queue-in-c/
+class RServeQueue {
+private:
+    // Underlying queue
+    std::queue<RServe> m_queue;
+
+    // mutex for thread synchronization
+    std::mutex m_mutex;
+
+    // Condition variable for signaling
+    std::condition_variable m_cond;
+
+public:
+    // Pushes an element to the queue
+    void push(RServe item)
+    {
+        // Acquire lock
+        std::unique_lock<std::mutex> lock(m_mutex);
+
+        // Add item
+        m_queue.push(item);
+
+        // Notify one thread that
+        // is waiting
+        m_cond.notify_one();
+    }
+
+    // Pops an element off the queue
+    RServe pop()
+    {
+        // acquire lock
+        std::unique_lock<std::mutex> lock(m_mutex);
+
+        // wait until queue is not empty
+        m_cond.wait(lock,
+                    [this]() { return !m_queue.empty(); });
+
+        // retrieve item
+        RServe item = m_queue.front();
+        m_queue.pop();
+
+        // return item
+        return item;
+    }
+};
+
+template <>
+class grpc::SerializationTraits<REXP> {
+  public:
+    // Deserialize a ByteBuffer into a XT_RAW REXP
+    static Status Deserialize(ByteBuffer* buffer, REXP* msg) {
+      if (!buffer || !msg) {
+        return Status(StatusCode::INVALID_ARGUMENT, "Null buffer or REXP pointer.");
+      }
+
+      grpc::Slice slice;
+
+      Status status = buffer->DumpToSingleSlice(&slice);
+      if (!status.ok()) {
+        return status;
+      }
+
+      rawrexp_init(msg, (char *)slice.begin(), (char *)slice.end());
+      
+      return Status::OK;
+    }
+
+    // Serialize XT_RAW REXP into a ByteBuffer
+    static Status Serialize(const REXP& msg, ByteBuffer* buffer, bool* own_buffer) {
+
+      grpc::Slice slice((char *)msg.data, rawrexp_size(&msg));
+
+      *buffer = grpc::ByteBuffer(&slice, 1);
+      *own_buffer = true; // Indicate that the caller owns the ByteBuffer
+
+      return Status::OK;
+    }
+};
+
+extern "C" {
+// Logic and data behind the server's behavior.
+class RserveServiceImpl final : public CallbackGenericService {
+
+  public:
+  RserveServiceImpl(char *host, int port) {
+    RServe rserve;
+    REXP call = { XT_NULL, 0, 0 }, ocaps = { XT_NULL, 0, 0 };
+    char *method;
+    int i, ret;
+
+    for (i = 0; i < 1; ++i) {
+      if ((ret = rserve_connect(&rserve.conn, host, port)) != 0) {
+        printf("Rserve error: %s\n", rserve_error(ret));
+        printf("Failed to estabilish connection\n");
+      }
+
+      // Create call that will return the gRPC methods
+      assign_call(&call, &rserve.conn.capabilities, NULL, 0);
+
+      // Query gRPC service methods
+      if ((ret = rserve_callocap(&rserve.conn, &call, &ocaps)) != 0) {
+        printf("Rserve error: %s\n", rserve_error(ret));
+        printf("Failed to return gRPC methods (OCAPs)\n");
+      }
+
+      // Extract list of methods
+      rserve.methods = (RList *)malloc(sizeof(RList));
+      *rserve.methods = *(RList *)ocaps.data;
+
+      if (i == 0) {
+        for(int j = 0; j < rlist_size(rserve.methods); ++j) {
+          method = rlist_name_at(rserve.methods, j);
+          m_rserve_methods.push_back(std::string(method));
+        }
+      }
+
+      m_rserve_queue.push(rserve);
+    }
+  }
+
+  ~RserveServiceImpl() {
+    RServe rserve;
+    for (int i = 0; i < 1; ++i) {
+      rserve = m_rserve_queue.pop();
+      rserve_disconnect(&rserve.conn);
+      rlist_free(rserve.methods);
+      printf("Successfully disconnected from Rserve\n");
+    }
+  }
+
+  private:
+  ServerGenericBidiReactor* CreateReactor(
+      GenericCallbackServerContext* context) override {
+
+    for (int i = 0; i < m_rserve_methods.size(); ++i) {
+      if(context->method() == m_rserve_methods.at(i)) {
+        return new RserveReactor(this, i);
+      }
+    }
+    // Forward this to the implementation of the base class returning
+    // UNIMPLEMENTED.
+    return CallbackGenericService::CreateReactor(context);
+  }
+
+  class RserveReactor : public ServerGenericBidiReactor {
+   public:
+    RserveReactor(RserveServiceImpl *service, int method_index) { 
+      m_method_index = method_index;
+      m_service = service;
+      StartRead(&m_request); 
+    }
+
+   private:
+    // Call Rserve
+    Status RserveRequest(REXP& request, REXP* reply) {
+      int ret;
+      Status result;
+      REXP rx, *ocap, call = { XT_NULL, NULL, NULL };
+      RServe rserve = m_service->m_rserve_queue.pop();
+
+      // Create gRPC method call
+      ocap = rlist_at(rserve.methods, m_method_index);
+      assign_call(&call, ocap, &request, 1);
+
+      // Call gRPC method
+      if ((ret = rserve_callocap(&rserve.conn, &call, &rx)) != 0) {
+        printf("Rserve error: %s\n", rserve_error(ret));
+        printf("Failed to return call to OCAP\n");
+      }
+
+      *reply = rx;
+
+      m_service->m_rserve_queue.push(rserve);
+
+      return Status::OK;
+    }
+
+    // Handle (de)serialization and communication with Rserve
+    void ProcessRequest() {
+      Status result;
+
+      // Deserialize a request message
+      REXP request = { XT_NULL, 0, 0 };
+      result =  grpc::SerializationTraits<REXP>::Deserialize(
+          &m_request, &request);
+      if (!result.ok()) {
+        Finish(result);
+        return;
+      }
+
+      // Call the Rserve handler
+      REXP reply = { XT_NULL, 0, 0 };
+      result = RserveRequest(request, &reply);
+      if (!result.ok()) {
+        Finish(result);
+        return;
+      }
+
+      // Serialize a reply message
+      bool own_buffer;
+      result =  grpc::SerializationTraits<REXP>::Serialize(
+          reply, &m_response, &own_buffer);
+      if (!result.ok()) {
+        Finish(result);
+        return;
+      }
+
+      StartWrite(&m_response);
+    }
+
+    void OnDone() override {
+      delete this;
+    }
+
+    void OnReadDone(bool ok) override {
+      if (!ok) {
+        return;
+      }
+      // Push blocking operations onto its own thread
+      std::thread t(&RserveReactor::ProcessRequest, this);
+      t.detach();
+    }
+
+    void OnWriteDone(bool ok) override {
+      Finish(ok ? Status::OK : Status(StatusCode::UNKNOWN, "Unexpected failure"));
+    }
+
+    ByteBuffer m_request;
+    ByteBuffer m_response;
+    int m_method_index;
+    RserveServiceImpl *m_service;
+  };
+
+ private:
+  absl::Mutex m_mutex;
+  std::vector<std::string> m_rserve_methods;
+  RServeQueue m_rserve_queue;
+};
+
+void RunServer(uint16_t port) {
+  std::string server_address = absl::StrFormat("0.0.0.0:%d", port);
+  std::string rserve_address = std::string("127.0.0.1");
+  int rserve_port = 6311;
+
+  RserveServiceImpl service((char *)rserve_address.c_str(), rserve_port);
+  grpc::EnableDefaultHealthCheckService(true);
+  ServerBuilder builder;
+  // Listen on the given address without any authentication mechanism.
+  builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+  // Register "service" as the instance through which we'll communicate with
+  // clients. In this case it corresponds to an *synchronous* service.
+  builder.RegisterCallbackGenericService(&service);
+  // Finally assemble the server.
+  std::unique_ptr<Server> server(builder.BuildAndStart());
+  std::cout << "Server listening on " << server_address << std::endl;
+
+  // Wait for the server to shutdown. Note that some other thread must be
+  // responsible for shutting down the server for this call to ever return.
+  server->Wait();
+}
+
+
+void server()
+{
+  //absl::ParseCommandLine(argc, argv);
+  //absl::InitializeLog();
+  RunServer(absl::GetFlag(FLAGS_port));
+  return;
+}
+
+}

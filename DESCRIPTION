@@ -1,0 +1,9 @@
+Package: grpcr
+Version: 1.0.0
+Date: 2025-10-02
+Title: An example R package
+Author: Byron Botha <byron@gibbybite.com>
+Maintainer: Byron Botha <byron@gibbybite.com>
+Depends: R (>= 2.14.1)
+Description: gRPC server.
+License: MIT
