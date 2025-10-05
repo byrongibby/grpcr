@@ -1,5 +1,5 @@
-\name{grpcr-package}
-\alias{grpcr-package}
+\name{gRPCr-package}
+\alias{gRPCr-package}
 \docType{package}
 \title{
   gRPC client and server for R
@@ -9,7 +9,7 @@
 }
 \details{
 \tabular{ll}{
-Package: \tab grpcr\cr
+Package: \tab gRPCr\cr
 Type: \tab Package\cr
 Version: \tab 1.0.0\cr
 Date: \tab 2025-10-02\cr
@@ -24,5 +24,7 @@ Maintainer: Byron Botha <byron@gibbybite.com>
 \keyword{ package }
 \examples{
 #NotRun
-grpc_server("~/path/to/service_defs.R", 35000)
+library(grpcr)
+
+grpc_server(service_defs = system.file("helloworld.R", package = "grpcr"))
 }

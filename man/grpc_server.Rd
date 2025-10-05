@@ -26,7 +26,9 @@ grpc_server(service_defs, host)
 
 \examples{
 #NotRun
-grpc_server("~/path/to/service_defs.R", 35000)
+library(gRPCr)
+
+grpc_server(service_defs = system.file("helloworld.R", package = "gRPCr"))
 }
 % Add one or more standard keywords, see file 'KEYWORDS' in the
 % R documentation directory.

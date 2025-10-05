@@ -1,2 +1,6 @@
-useDynLib(grpcr)
+useDynLib(gRPCr)
+
+importFrom("Rserve", "ocap", "Rserve")
+
+export(grpc_ocaps)
 export(grpc_server)

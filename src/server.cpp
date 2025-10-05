@@ -19,7 +19,6 @@
 #include "absl/strings/str_format.h"
 #include "absl/synchronization/mutex.h"
 
-
 extern "C" {
 
 #include "rserve-client/rexp.h"
@@ -28,8 +27,6 @@ extern "C" {
 #include "rserve-client/utilities.h"
 
 }
-
-ABSL_FLAG(uint16_t, port, 50051, "Server port for the service");
 
 using grpc::ByteBuffer;
 using grpc::CallbackGenericService;
@@ -128,6 +125,7 @@ class grpc::SerializationTraits<REXP> {
 };
 
 extern "C" {
+
 // Logic and data behind the server's behavior.
 class RserveServiceImpl final : public CallbackGenericService {
 
@@ -287,35 +285,67 @@ class RserveServiceImpl final : public CallbackGenericService {
   RServeQueue m_rserve_queue;
 };
 
-void RunServer(uint16_t port) {
-  std::string server_address = absl::StrFormat("0.0.0.0:%d", port);
+typedef struct GRPCRServer {
+  RserveServiceImpl *service;
+  grpc::Server *server;
+} GRPCRServer;
+
+void grpcr_server_finalize(SEXP ptr)
+{
+  if (TYPEOF(ptr) != EXTPTRSXP) return;
+
+  GRPCRServer *p = (GRPCRServer *)R_ExternalPtrAddr(ptr);
+
+  if (p) {
+    Rprintf("Finalizing grpc_server at address %p\n", p);
+    delete p->service;
+    delete p->server;
+    free(p);
+    R_ClearExternalPtr(ptr);
+  }
+}
+
+SEXP grpcr_server_start(SEXP port)
+{
+  PROTECT(port = AS_INTEGER(port));
+
+  const int *port_ptr = INTEGER_POINTER(port);
+
+  std::string server_address = absl::StrFormat("0.0.0.0:%d", *port_ptr);
   std::string rserve_address = std::string("127.0.0.1");
   int rserve_port = 6311;
 
-  RserveServiceImpl service((char *)rserve_address.c_str(), rserve_port);
+  RserveServiceImpl *service = new RserveServiceImpl((char *)rserve_address.c_str(), rserve_port);
   grpc::EnableDefaultHealthCheckService(true);
   ServerBuilder builder;
   // Listen on the given address without any authentication mechanism.
   builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
   // Register "service" as the instance through which we'll communicate with
   // clients. In this case it corresponds to an *synchronous* service.
-  builder.RegisterCallbackGenericService(&service);
+  builder.RegisterCallbackGenericService(service);
   // Finally assemble the server.
   std::unique_ptr<Server> server(builder.BuildAndStart());
   std::cout << "Server listening on " << server_address << std::endl;
 
-  // Wait for the server to shutdown. Note that some other thread must be
-  // responsible for shutting down the server for this call to ever return.
-  server->Wait();
+  GRPCRServer *p = (GRPCRServer *)malloc(sizeof(GRPCRServer));
+  p->service = service;
+  p->server = server.release();
+
+  // Create an external pointer, setting the tag and finalizer
+  SEXP ptr = PROTECT(R_MakeExternalPtr(p, R_NilValue, R_NilValue));
+  R_RegisterCFinalizer(ptr, grpcr_server_finalize);
+
+  // Set a custom class for easier identification in R
+  setAttrib(ptr, R_ClassSymbol, mkString("grpc_server_extptr"));
+
+  UNPROTECT(2);
+
+  return ptr;
 }
 
-
-void server()
+void grpcr_server_shutdown()
 {
-  //absl::ParseCommandLine(argc, argv);
-  //absl::InitializeLog();
-  RunServer(absl::GetFlag(FLAGS_port));
-  return;
-}
 
 }
+
+} // END_EXTERN_C
