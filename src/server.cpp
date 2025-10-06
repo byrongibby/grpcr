@@ -130,7 +130,7 @@ extern "C" {
 class RserveServiceImpl final : public CallbackGenericService {
 
   public:
-  RserveServiceImpl(char *host, int port) {
+  RserveServiceImpl(const char *host, const int port) {
     RServe rserve;
     REXP call = { XT_NULL, 0, 0 }, ocaps = { XT_NULL, 0, 0 };
     char *method;
@@ -307,15 +307,11 @@ void grpcr_server_finalize(SEXP ptr)
 
 SEXP grpcr_server_start(SEXP port)
 {
-  PROTECT(port = AS_INTEGER(port));
-
-  const int *port_ptr = INTEGER_POINTER(port);
-
-  std::string server_address = absl::StrFormat("0.0.0.0:%d", *port_ptr);
+  std::string server_address = absl::StrFormat("0.0.0.0:%d", asInteger(port));
   std::string rserve_address = std::string("127.0.0.1");
   int rserve_port = 6311;
 
-  RserveServiceImpl *service = new RserveServiceImpl((char *)rserve_address.c_str(), rserve_port);
+  RserveServiceImpl *service = new RserveServiceImpl(rserve_address.c_str(), rserve_port);
   grpc::EnableDefaultHealthCheckService(true);
   ServerBuilder builder;
   // Listen on the given address without any authentication mechanism.
@@ -338,14 +334,23 @@ SEXP grpcr_server_start(SEXP port)
   // Set a custom class for easier identification in R
   setAttrib(ptr, R_ClassSymbol, mkString("grpc_server_extptr"));
 
-  UNPROTECT(2);
+  UNPROTECT(1);
 
   return ptr;
 }
 
-void grpcr_server_shutdown()
+SEXP grpcr_server_shutdown(SEXP ptr)
 {
+  if (TYPEOF(ptr) != EXTPTRSXP)  R_NilValue;
 
+  GRPCRServer *p = (GRPCRServer *)R_ExternalPtrAddr(ptr);
+
+  if (p) {
+    Rprintf("Shutting down grpc_server at address %p\n", p);
+    p->server->Shutdown();
+  }
+
+  return R_NilValue;
 }
 
 } // END_EXTERN_C
