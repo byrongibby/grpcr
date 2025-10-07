@@ -151,6 +151,8 @@ class RserveServiceImpl final : public CallbackGenericService {
         printf("Failed to return gRPC methods (OCAPs)\n");
       }
 
+      rexp_clear(&call);
+
       // Extract list of methods
       rserve.methods = (RList *)malloc(sizeof(RList));
       *rserve.methods = *(RList *)ocaps.data;
@@ -215,6 +217,8 @@ class RserveServiceImpl final : public CallbackGenericService {
         printf("Rserve error: %s\n", rserve_error(ret));
         printf("Failed to return call to OCAP\n");
       }
+
+      rexp_clear(&call);
 
       *reply = rx;
 
