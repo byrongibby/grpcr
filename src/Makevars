@@ -1,10 +1,10 @@
 PKG_LIBS = `pkg-config --libs grpc++` -Lrserve-client -lrserve-client
 
-$(SHLIB): server.o rserve-client/librserve-client.a
+$(SHLIB): client.o server.o rserve-client/librserve-client.a
 
-server.o: server.cpp
-	@echo "Building server object file"
-	$(CC) -I"/usr/include/R/" $(CXXFLAGS) $(CXXPICFLAGS) -c -o $@ $^
+%.o: %.cpp
+	@echo "Building gRPCr object files"
+	$(CC) -I"/usr/include/R/" $(CXXFLAGS) $(CXXPICFLAGS) -c $< -o $@
 
 rserve-client/librserve-client.a:
 	@echo "Building rserve-client library"

@@ -10,7 +10,7 @@ service_defs <- list(
     SayHello = function(request) {
       message <- helloworld.HelloRequest$read(request)
       response <- new(helloworld.HelloReply)
-      response$message <- paste0("Hello, ", message$name)
+      response$message <- paste0("Hello ", message$name)
       return(serialize(response, NULL))
     }
   )

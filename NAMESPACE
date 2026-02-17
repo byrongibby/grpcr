@@ -2,5 +2,8 @@ useDynLib(gRPCr)
 
 importFrom("Rserve", "ocap", "Rserve")
 
+export(grpc_client)
 export(grpc_ocaps)
+export(grpc_request)
 export(grpc_server)
+export(grpc_shutdown)
