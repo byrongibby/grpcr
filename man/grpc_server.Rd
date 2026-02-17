@@ -1,35 +1,41 @@
 \name{grpc_server}
 \alias{grpc_server}
-%- Also NEED an '\alias' for EACH other topic documented here.
 \title{Start a gRPC server}
 \description{
-    A gRPC server that uses gRPC service definitions to communicate with Rserve.
+    Start a gRPC server that uses gRPC service definitions to communicate with Rserve.
 }
 \usage{
-grpc_server(service_defs, host)
+grpc_server(service_defs, port = 50051, ...)
 }
-%- maybe also 'usage' for other objects documented here.
 \arguments{
   \item{service_defs}{
       Path to R script containing gRPC service definitions.
   }
   \item{port}{
-      Port on which the server is reachable.
+      Port on which the server is reachable. Defaults to 50051.
+  }
+  \item{\dots}{
+      Additional arguments:
+      \itemize{
+        \item \code{num_connections}: Number of concurrent connections to handle. Defaults to 10.
+        \item \code{rserve_port}: Port for Rserve instance. Defaults to 6311L.
+        \item \code{is_blocking}: Logical, if TRUE the server will block execution. Defaults to TRUE.
+      }
   }
 }
 \value{
-    Void.
+    An external pointer to the gRPC server instance if \code{is_blocking} is FALSE. If \code{is_blocking} is TRUE, the function does not return until interrupted.
 }
 \author{
     Byron Botha
 }
-
 \examples{
-#NotRun
+\dontrun{
 library(gRPCr)
-
-grpc_server(service_defs = system.file("helloworld.R", package = "gRPCr"))
+# Assuming 'helloworld.R' contains service definitions
+server <- grpc_server(service_defs = system.file("helloworld.R", package = "gRPCr"),
+                      port = 50051,
+                      is_blocking = FALSE)
 }
-% Add one or more standard keywords, see file 'KEYWORDS' in the
-% R documentation directory.
+}
 \keyword{grpc_server}

@@ -1,4 +1,4 @@
 library(testthat)
-library(grpcr)
+library(gRPCr)
 
-test_check("grpcr")
+test_check("gRPCr")

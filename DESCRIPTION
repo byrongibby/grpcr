@@ -3,6 +3,8 @@ Title: A gRPC server for R(ProtoBuf)
 Version: 1.0.0
 Date: 2025-10-02
 Authors@R: c(person(given = "Byron", family = "Botha", role = c("aut", "cre"), email = "byron@gibbybite.com"))
+Author: Byron Botha
+Maintainer: Byron Botha <byron@gibbybite.com>
 Description: A gRPC server for R(ProtoBuf).
 Depends: R (>= 4.2.0)
 Imports: Rserve

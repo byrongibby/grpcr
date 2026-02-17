@@ -1,7 +1,6 @@
 test_that("Greeter service: client and server can communicate", {
   library(RProtoBuf)
   library(gRPCr)
-  library(zoo)
 
   pkg <- system.file(package = "gRPCr")
 
