@@ -1,6 +1,6 @@
 # gRPCr
 
-A gRPC server and client implementation for R, powered by Rserve and C++.
+A gRPC server and client implementation for R, powered by Rserve and C++. **Not production ready.**
 
 ## Overview
 
@@ -26,7 +26,7 @@ It leverages the [RProtoBuf](https://github.com/eddelbuettel/rprotobuf) package 
     *   *Linux (Arch)*: `pacman -S grpc`
     *   *Debian/Ubuntu*: `apt-get install libgrpc++-dev protobuf-compiler-grpc`
     *   *macOS*: `brew install grpc`
-*   **R Packages**: `RProtoBuf`, `Rserve`
+*   **R Packages**: `RProtoBuf`, `Rserve` (server only)
 
 ### Install from GitHub
 
@@ -43,29 +43,27 @@ First, define your gRPC service using a `.proto` file and implement the logic in
 
 **helloworld.R**:
 ```r
-library(RProtoBuf)
-library(gRPCr)
+suppressPackageStartupMessages({
+  library(gRPCr)
+  library(RProtoBuf)
+})
 
-# Load the protocol buffer definition
-# Assuming helloworld.proto is in the same directory or package
-readProtoFiles(system.file("helloworld.proto", package = "gRPCr"))
+RProtoBuf::readProtoFiles(system.file("helloworld.proto", package = "gRPCr"))
 
-# Define the service logic
-SayHello <- function(request_bytes) {
-  # Deserialize the request
-  request <- helloworld.HelloRequest$read(request_bytes)
-  
-  # Create a reply
-  reply <- new(helloworld.HelloReply, message = paste("Hello", request$name))
-  
-  # Return serialized reply
-  return(reply$serialize(NULL))
-}
-
-# Define the service descriptor (matching the proto definition)
-Greeter <- list(
-  SayHello = SayHello
+service_defs <- list(
+  helloworld.Greeter = list(
+    SayHello = function(request) {
+      message <- helloworld.HelloRequest$read(request)
+      response <- new(helloworld.HelloReply)
+      response$message <- paste0("Hello ", message$name)
+      return(serialize(response, NULL))
+    }
+  )
 )
+
+oc.init <- grpc_ocaps(service_defs)
+
+message("Successfully loaded gRPC services to Rserve as OCAPs.")
 ```
 
 ### 2. Start the Server
@@ -73,13 +71,9 @@ Greeter <- list(
 ```r
 library(gRPCr)
 
-# Start the server (non-blocking for this example)
-# service_defs points to the R script defining the service
-server <- grpc_server(
-  service_defs = "helloworld.R", 
-  port = 50051, 
-  is_blocking = FALSE
-)
+server <- grpc_server(service_defs = "path/to/helloworld.R",
+                      port = 50051,
+                      is_blocking = FALSE)
 ```
 
 ### 3. Create a Client and Make a Request
@@ -99,10 +93,15 @@ request_bytes <- request$serialize(NULL)
 
 # Send the request
 # The response handler is optional; here we use it to parse the reply immediately
-response_text <- grpc_request(client, "Greeter", "SayHello", request_bytes, 
+response_text <- grpc_request(
+  client  = client,
+  service = "Greeter",
+  method  = "SayHello",
+  request = request_bytes, 
   response_handler = function(response_bytes) {
     helloworld.HelloReply$read(response_bytes)$message
-  })
+  }
+)
 
 print(response_text)
 # Output: "Hello World"
