@@ -7,8 +7,7 @@ Author: Byron Botha
 Maintainer: Byron Botha <byron@gibbybite.com>
 Description: A gRPC server for R(ProtoBuf).
 Depends: R (>= 4.2.0)
-Imports: Rserve
-Suggests: RProtoBuf
+Imports: Rserve, RProtoBuf
 URL: https://github.com/byrongibby/grpcr
 BugReports: https://github.com/byrongibby/grpcr/issues
 License: MIT + file LICENSE
