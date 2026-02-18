@@ -13,12 +13,6 @@
 #include <R.h>
 #include <Rdefines.h>
 
-#include "absl/flags/flag.h"
-#include "absl/flags/parse.h"
-#include "absl/log/initialize.h"
-#include "absl/strings/str_format.h"
-#include "absl/synchronization/mutex.h"
-
 extern "C" {
 
 #include "rserve-client/rexp.h"
@@ -284,7 +278,6 @@ class RserveServiceImpl final : public CallbackGenericService {
   };
 
  private:
-  absl::Mutex m_mutex;
   std::vector<std::string> m_rserve_methods;
   RServeQueue m_rserve_queue;
 };
@@ -311,21 +304,22 @@ void grpcr_server_finalize(SEXP ptr)
 
 SEXP grpcr_server_start(SEXP port)
 {
-  std::string server_address = absl::StrFormat("0.0.0.0:%d", asInteger(port));
-  std::string rserve_address = std::string("127.0.0.1");
+  char server_address[250], rserve_address[250];
+  snprintf(server_address, 250, "0.0.0.0:%d", asInteger(port));
+  snprintf(rserve_address, 250, "127.0.0.1");
   int rserve_port = 6311;
 
-  RserveServiceImpl *service = new RserveServiceImpl(rserve_address.c_str(), rserve_port);
+  RserveServiceImpl *service = new RserveServiceImpl(rserve_address, rserve_port);
   grpc::EnableDefaultHealthCheckService(true);
   ServerBuilder builder;
   // Listen on the given address without any authentication mechanism.
-  builder.AddListeningPort(server_address, grpc::InsecureServerCredentials());
+  builder.AddListeningPort(std::string(server_address), grpc::InsecureServerCredentials());
   // Register "service" as the instance through which we'll communicate with
   // clients. In this case it corresponds to an *synchronous* service.
   builder.RegisterCallbackGenericService(service);
   // Finally assemble the server.
   std::unique_ptr<Server> server(builder.BuildAndStart());
-  std::cout << "Server listening on " << server_address << std::endl;
+  printf("Server listening on %s\n", server_address);
 
   GRPCRServer *p = (GRPCRServer *)malloc(sizeof(GRPCRServer));
   p->service = service;
